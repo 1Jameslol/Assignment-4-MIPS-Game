@@ -2,7 +2,142 @@
 # Dealer stands on all 17s. No wagers, splitting, insurance or doubling.
 .text
     j main
-.include "../common/gui.asm"
+# Shared MARS Bitmap Display helpers.
+.macro box (%x,%y,%w,%h,%rgb)
+    li $a0, %x
+    li $a1, %y
+    li $a2, %w
+    li $a3, %h
+    li $t9, %rgb
+    jal rect
+.end_macro
+
+.macro label (%x,%y,%str,%rgb)
+    li $a0, %x
+    li $a1, %y
+    la $a2, %str
+    li $t9, %rgb
+    jal draw_text
+.end_macro
+
+.data 0x10010000
+framebuffer: .space 65536
+glyph_keys: .asciiz "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ -:/"
+glyphs:
+        .byte 31,17,19,21,25,17,31,4,12,4,4,4,4,14,30,1,1,14,16,16,31
+        .byte 30,1,1,14,1,1,30,18,18,18,31,2,2,2,31,16,16,30,1,1,30
+        .byte 14,16,16,30,17,17,14,31,1,2,4,8,8,8,14,17,17,14,17,17,14
+        .byte 14,17,17,15,1,1,14,14,17,17,31,17,17,17,30,17,17,30,17,17,30
+        .byte 15,16,16,16,16,16,15,30,17,17,17,17,17,30,31,16,16,30,16,16,31
+        .byte 31,16,16,30,16,16,16,15,16,16,23,17,17,15,17,17,17,31,17,17,17
+        .byte 31,4,4,4,4,4,31,7,2,2,2,2,18,12,17,18,20,24,20,18,17
+        .byte 16,16,16,16,16,16,31,17,27,21,21,17,17,17,17,25,21,19,17,17,17
+        .byte 14,17,17,17,17,17,14,30,17,17,30,16,16,16,14,17,17,17,21,18,13
+        .byte 30,17,17,30,20,18,17,15,16,16,14,1,1,30,31,4,4,4,4,4,4
+        .byte 17,17,17,17,17,17,14,17,17,17,17,17,10,4,17,17,17,21,21,27,17
+        .byte 17,17,10,4,10,17,17,17,17,10,4,4,4,4,31,1,2,4,8,16,31
+        .byte 0,0,0,0,0,0,0,0,0,0,31,0,0,0,0,4,4,0,4,4,0
+        .byte 1,2,4,8,16,0,0
+.align 2
+
+.text
+rect:
+    blez $a2, rect_done
+    blez $a3, rect_done
+    sll $t0, $a1, 7
+    addu $t0, $t0, $a0
+    sll $t0, $t0, 2
+    la $t1, framebuffer
+    addu $t0, $t0, $t1
+    move $t3, $a3
+rect_row:
+    move $t1, $t0
+    move $t2, $a2
+rect_col:
+    sw $t9, 0($t1)
+    addiu $t1, $t1, 4
+    addiu $t2, $t2, -1
+    bnez $t2, rect_col
+    addiu $t0, $t0, 512
+    addiu $t3, $t3, -1
+    bnez $t3, rect_row
+rect_done:
+    jr $ra
+
+draw_text:
+    move $t8, $a2
+text_char:
+    lbu $t0, 0($t8)
+    beqz $t0, text_done
+    la $t1, glyph_keys
+    li $t2, 0
+text_lookup:
+    lbu $t3, 0($t1)
+    beqz $t3, text_advance
+    beq $t0, $t3, text_found
+    addiu $t1, $t1, 1
+    addiu $t2, $t2, 1
+    j text_lookup
+text_found:
+    li $t3, 7
+    mul $t2, $t2, $t3
+    la $t1, glyphs
+    addu $t1, $t1, $t2
+    sll $t3, $a1, 7
+    addu $t3, $t3, $a0
+    sll $t3, $t3, 2
+    la $t0, framebuffer
+    addu $t3, $t3, $t0
+    li $t5, 7
+text_row:
+    lbu $t2, 0($t1)
+    li $t4, 0x10
+    li $t6, 5
+    move $t7, $t3
+text_pixel:
+    and $t0, $t2, $t4
+    beqz $t0, text_skip
+    sw $t9, 0($t7)
+text_skip:
+    srl $t4, $t4, 1
+    addiu $t7, $t7, 4
+    addiu $t6, $t6, -1
+    bnez $t6, text_pixel
+    addiu $t3, $t3, 512
+    addiu $t1, $t1, 1
+    addiu $t5, $t5, -1
+    bnez $t5, text_row
+text_advance:
+    addiu $a0, $a0, 5
+    addiu $t8, $t8, 1
+    j text_char
+text_done:
+    jr $ra
+
+draw_number:
+    addiu $sp, $sp, -16
+    sw $ra, 12($sp)
+    li $t0, 100
+    div $a2, $t0
+    mflo $t1
+    mfhi $t2
+    addiu $t1, $t1, 48
+    sb $t1, 0($sp)
+    li $t0, 10
+    div $t2, $t0
+    mflo $t1
+    mfhi $t2
+    addiu $t1, $t1, 48
+    addiu $t2, $t2, 48
+    sb $t1, 1($sp)
+    sb $t2, 2($sp)
+    sb $zero, 3($sp)
+    move $a2, $sp
+    jal draw_text
+    lw $ra, 12($sp)
+    addiu $sp, $sp, 16
+    jr $ra
+
 .data
 deck: .space 208
 deck_pos: .word 0
